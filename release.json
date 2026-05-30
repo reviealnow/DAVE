@@ -1,7 +1,7 @@
 {
   "product_name": "DAVE",
-  "github_repository": "reviealnow/Dave",
-  "releases_api": "https://api.github.com/repos/reviealnow/Dave/releases/latest",
-  "tags_api": "https://api.github.com/repos/reviealnow/Dave/tags",
-  "releases_page": "https://github.com/reviealnow/Dave/releases"
+  "github_repository": "reviealnow/DAVE",
+  "releases_api": "https://api.github.com/repos/reviealnow/DAVE/releases/latest",
+  "tags_api": "https://api.github.com/repos/reviealnow/DAVE/tags",
+  "releases_page": "https://github.com/reviealnow/DAVE/releases"
 }
