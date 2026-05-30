@@ -2,8 +2,30 @@ import os
 import secrets
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+# ── Repo root (derived from this file's location before env is loaded) ────────
+# config.py lives at Dave/backend/app/config.py → parents[2] = Dave/
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_ENV_FILE = _REPO_ROOT / ".env"
+
+# Load .env first so all os.getenv() calls below pick it up
+load_dotenv(_ENV_FILE)
+
+# ── Ensure a stable AUTH_SECRET_KEY exists ────────────────────────────────────
+# If not set via environment or .env, generate one and persist it to .env.
+# This runs once on first startup; subsequent restarts read the same key.
+if not os.getenv("AUTH_SECRET_KEY"):
+    _new_key = secrets.token_hex(32)
+    with _ENV_FILE.open("a", encoding="utf-8") as _fh:
+        _fh.write(f"AUTH_SECRET_KEY={_new_key}\n")
+    os.environ["AUTH_SECRET_KEY"] = _new_key
+    # Reload so the rest of this module sees the new value
+    load_dotenv(_ENV_FILE, override=True)
+    print(f"[dave] Generated stable AUTH_SECRET_KEY → {_ENV_FILE}")
+
 # ── Repository / runtime root ─────────────────────────────────────────────────
-ROOT_DIR = Path(os.getenv("DAVE_ROOT", Path(__file__).resolve().parents[2]))
+ROOT_DIR = Path(os.getenv("DAVE_ROOT", _REPO_ROOT))
 DATA_DIR = Path(os.getenv("DAVE_DATA_DIR", ROOT_DIR / "data"))
 
 # ── DUT / serial / analyzer paths (preserved from DUT_browser) ────────────────
@@ -21,9 +43,7 @@ APP_HOST = os.getenv("APP_HOST", "127.0.0.1" if APP_MODE == "desktop" else "0.0.
 APP_PORT = int(os.getenv("APP_PORT", "8765"))
 
 # ── Auth / JWT ────────────────────────────────────────────────────────────────
-# WARNING: set AUTH_SECRET_KEY in env for production; default generates a
-# random key each restart (all sessions invalidated on restart).
-AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", secrets.token_hex(32))
+AUTH_SECRET_KEY = os.environ["AUTH_SECRET_KEY"]  # guaranteed set above
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "480"))  # 8 h
 SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "false").lower() in {"1", "true", "yes"}
 SESSION_COOKIE_SAMESITE: str = os.getenv("SESSION_COOKIE_SAMESITE", "lax")
