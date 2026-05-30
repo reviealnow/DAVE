@@ -6,7 +6,7 @@ from functools import lru_cache
 from pathlib import Path
 
 
-ROOT_DIR = Path(os.getenv("DUT_BROWSER_ROOT", Path(__file__).resolve().parents[3]))
+ROOT_DIR = Path(os.getenv("DAVE_ROOT", Path(__file__).resolve().parents[2]))
 VERSION_FILE = ROOT_DIR / "VERSION"
 RELEASE_CONFIG_FILE = ROOT_DIR / "release.json"
 
