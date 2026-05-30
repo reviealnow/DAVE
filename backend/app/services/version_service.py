@@ -2,10 +2,19 @@ from __future__ import annotations
 
 import json
 import os
+import ssl
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+
+
+def _ssl_context() -> ssl.SSLContext:
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        return ssl.create_default_context()
 
 from app.versioning import read_release_config, read_version
 
@@ -61,6 +70,21 @@ class VersionService:
                 "checked_at": checked_at.isoformat(),
                 "releases_page": config["releases_page"],
             }
+        except RuntimeError as exc:
+            msg = str(exc)
+            # "No releases or tags found" is expected for a new repo — not an error
+            no_release = "no releases or tags found" in msg.lower()
+            return {
+                "ok": no_release,
+                "current_version": current_version,
+                "latest_version": current_version,
+                "update_available": False,
+                "message": f"Running v{current_version} (no releases published yet)" if no_release else f"Version check failed: {exc}",
+                "source": "none" if no_release else "error",
+                "repository": repository,
+                "checked_at": checked_at.isoformat(),
+                "releases_page": config["releases_page"],
+            }
         except Exception as exc:
             return {
                 "ok": False,
@@ -111,7 +135,7 @@ class VersionService:
                 "User-Agent": "dut-browser-version-checker",
             },
         )
-        with urlopen(request, timeout=5) as response:
+        with urlopen(request, timeout=5, context=_ssl_context()) as response:
             return json.loads(response.read().decode("utf-8"))
 
     def _normalize_version(self, version: str) -> str:

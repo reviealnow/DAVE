@@ -6,5 +6,6 @@ websockets>=13.0
 pandas>=2.0
 matplotlib>=3.9
 bcrypt>=4.0
+certifi
 python-jose[cryptography]>=3.3.0
 python-multipart>=0.0.9
