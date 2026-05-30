@@ -1,0 +1,232 @@
+from __future__ import annotations
+
+import shutil
+import subprocess
+import sys
+import time
+import zipfile
+from datetime import datetime
+import os
+from pathlib import Path
+import re
+from typing import Literal
+
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import FileResponse
+from pydantic import BaseModel
+from serial.tools import list_ports
+
+from app.config import ANALYZER_SCRIPT, LOG_DIR
+from app.tools import dispatch
+from app.tools.context import AppContext
+
+router = APIRouter(prefix="/api/serial", tags=["serial"])
+
+
+class SerialOpenRequest(BaseModel):
+    port: str = ""
+    baudrate: int = 115200
+    mode: Literal["serial", "replay"] = "serial"
+    replay_path: str | None = None
+    replay_interval_ms: int = 100
+
+
+class SerialSendRequest(BaseModel):
+    text: str
+
+
+class DownloadWorkflowError(Exception):
+    def __init__(self, message: str, status_code: int = 500) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+
+MIN_SNAPSHOT_MARKERS = 2
+DIRECT_DOWNLOAD_MAX_LINES = 100
+TOP_COMMAND_PATTERN = re.compile(r"\btop\b", re.IGNORECASE)
+
+
+def create_dut_session_dir() -> Path:
+    try:
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+    except Exception as exc:
+        raise DownloadWorkflowError(f"failed to create logs root directory: {exc}", status_code=500) from exc
+
+    for _ in range(3):
+        session_name = f"dut-session-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+        session_dir = LOG_DIR / session_name
+        try:
+            session_dir.mkdir(parents=False, exist_ok=False)
+            return session_dir
+        except FileExistsError:
+            time.sleep(1)
+        except Exception as exc:
+            raise DownloadWorkflowError(f"failed to create directory: {exc}", status_code=500) from exc
+
+    raise DownloadWorkflowError("failed to create directory: session name collision", status_code=500)
+
+
+def save_downloaded_log_to_session(file_name: str, session_dir: Path) -> Path:
+    safe_name = Path(file_name).name
+    if safe_name != file_name:
+        raise DownloadWorkflowError("failed to download DUT log: invalid file name", status_code=400)
+
+    src = LOG_DIR / safe_name
+    if not src.exists() or not src.is_file():
+        raise DownloadWorkflowError("log file not found", status_code=404)
+
+    dst = session_dir / safe_name
+    try:
+        shutil.copy2(src, dst)
+    except Exception as exc:
+        raise DownloadWorkflowError(f"failed to write downloaded DUT log: {exc}", status_code=500) from exc
+    return dst
+
+
+def should_bypass_analyzer(log_path: Path) -> bool:
+    line_count = 0
+    has_top_command = False
+    try:
+        with log_path.open("r", encoding="utf-8", errors="ignore") as fp:
+            for line in fp:
+                line_count += 1
+                if TOP_COMMAND_PATTERN.search(line):
+                    has_top_command = True
+                if line_count >= DIRECT_DOWNLOAD_MAX_LINES:
+                    return False
+    except Exception as exc:
+        raise DownloadWorkflowError(f"failed to read downloaded DUT log: {exc}", status_code=500) from exc
+    return line_count < DIRECT_DOWNLOAD_MAX_LINES and not has_top_command
+
+
+def ensure_log_has_minimum_snapshots(log_path: Path, minimum_markers: int = MIN_SNAPSHOT_MARKERS) -> None:
+    marker = "= Test Time:"
+    try:
+        with log_path.open("r", encoding="utf-8", errors="ignore") as fp:
+            count = 0
+            for line in fp:
+                if marker in line:
+                    count += 1
+                    if count >= minimum_markers:
+                        return
+    except Exception as exc:
+        raise DownloadWorkflowError(f"failed to read downloaded DUT log: {exc}", status_code=500) from exc
+    raise DownloadWorkflowError(
+        f"log too short for analysis; need at least {minimum_markers} snapshots ('{marker}')",
+        status_code=422,
+    )
+
+
+def run_analyzer_for_session(session_dir: Path) -> None:
+    if not ANALYZER_SCRIPT.exists() or not ANALYZER_SCRIPT.is_file():
+        raise DownloadWorkflowError("analyzer3.py not found", status_code=500)
+
+    mpl_config_dir = LOG_DIR / ".mplconfig"
+    try:
+        mpl_config_dir.mkdir(parents=True, exist_ok=True)
+    except Exception as exc:
+        raise DownloadWorkflowError(f"failed to prepare analyzer runtime directory: {exc}", status_code=500) from exc
+
+    env = os.environ.copy()
+    env["MPLCONFIGDIR"] = str(mpl_config_dir)
+    env["MPLBACKEND"] = "Agg"
+
+    try:
+        completed = subprocess.run(
+            [sys.executable, str(ANALYZER_SCRIPT)],
+            cwd=session_dir,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+    except Exception as exc:
+        raise DownloadWorkflowError(f"failed to execute analyzer3.py: {exc}", status_code=500) from exc
+
+    if completed.returncode != 0:
+        stderr = completed.stderr.strip()
+        stdout = completed.stdout.strip()
+        combined = f"{stderr}\n{stdout}".strip()
+        if "Matplotlib is building the font cache" in combined:
+            raise DownloadWorkflowError(
+                "analyzer runtime setup issue (matplotlib font cache), not log content issue",
+                status_code=500,
+            )
+        message = stderr or stdout or "analyzer3.py execution failed"
+        raise DownloadWorkflowError(f"analyzer3.py execution failed: {message}", status_code=500)
+
+
+def zip_session_dir(session_dir: Path) -> Path:
+    if not session_dir.exists() or not session_dir.is_dir():
+        raise DownloadWorkflowError("failed to create zip: session directory not found", status_code=500)
+
+    zip_path = session_dir.with_suffix(".zip")
+    try:
+        with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for item in sorted(session_dir.rglob("*")):
+                if item.is_file():
+                    zf.write(item, arcname=item.relative_to(session_dir.parent))
+    except Exception as exc:
+        raise DownloadWorkflowError(f"failed to create zip: {exc}", status_code=500) from exc
+    return zip_path
+
+
+@router.get("/ports")
+def list_serial_ports_http(request: Request) -> dict:
+    return dispatch("list_serial_ports", {}, AppContext.from_request(request))
+
+
+@router.post("/open")
+def open_serial_http(body: SerialOpenRequest, request: Request) -> dict:
+    try:
+        return dispatch("open_serial", body.model_dump(), AppContext.from_request(request))
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/close")
+def close_serial_http(request: Request) -> dict:
+    return dispatch("close_serial", {}, AppContext.from_request(request))
+
+
+@router.post("/send")
+def send_serial_http(body: SerialSendRequest, request: Request) -> dict:
+    try:
+        return dispatch("send_serial", {"text": body.text}, AppContext.from_request(request))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/efficiency-report")
+def get_efficiency_report_http(request: Request) -> dict:
+    return dispatch("get_efficiency_report", {}, AppContext.from_request(request))
+
+
+@router.get("/logs/{file_name}")
+def download_log(file_name: str) -> FileResponse:
+    try:
+        safe_name = Path(file_name).name
+        if safe_name != file_name:
+            raise DownloadWorkflowError("failed to download DUT log: invalid file name", status_code=400)
+
+        source_log_path = LOG_DIR / safe_name
+        if not source_log_path.exists() or not source_log_path.is_file():
+            raise DownloadWorkflowError("log file not found", status_code=404)
+
+        if should_bypass_analyzer(source_log_path):
+            return FileResponse(path=source_log_path, filename=safe_name, media_type="text/plain")
+
+        session_dir = create_dut_session_dir()
+        log_path = save_downloaded_log_to_session(file_name=safe_name, session_dir=session_dir)
+        ensure_log_has_minimum_snapshots(log_path=log_path)
+        run_analyzer_for_session(session_dir=session_dir)
+        zip_path = zip_session_dir(session_dir=session_dir)
+    except DownloadWorkflowError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"unexpected error while preparing DUT log bundle: {exc}") from exc
+
+    return FileResponse(
+        path=zip_path,
+        filename=zip_path.name,
+        media_type="application/zip",
+    )
