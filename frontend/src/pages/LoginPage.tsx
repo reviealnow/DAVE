@@ -96,6 +96,12 @@ export default function LoginPage() {
         </div>
 
         <form onSubmit={(e) => void handleSubmit(e)}>
+          {mode === "register" && (
+            <ul style={{ fontSize: 12, color: "#555", background: "#f8f8f8", border: "1px solid #e0e0e0", borderRadius: 6, padding: "8px 12px 8px 24px", marginBottom: 14, lineHeight: 1.8 }}>
+              <li>Username: 3–32 characters, letters / numbers / underscore only</li>
+              <li>Password: at least 6 characters</li>
+            </ul>
+          )}
           <input
             style={input}
             placeholder="Username"

@@ -41,6 +41,11 @@ class SysMonParser:
         self._snapshot_full_count = 0
         self._snapshot_delta_count = 0
 
+    @property
+    def last_snapshot(self) -> dict | None:
+        with self._state_lock:
+            return deepcopy(self._last_emitted_snapshot)
+
     def efficiency_report(self) -> dict:
         average_batch_size = (
             self._console_line_count / self._console_batch_count if self._console_batch_count > 0 else 0.0

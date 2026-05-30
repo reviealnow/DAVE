@@ -1,14 +1,66 @@
+import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../../auth/AuthProvider";
+import { fetchAppStatus, type AppStatus } from "../../api/status";
 
 const NAV_LINKS = [
   { to: "/dashboard", label: "Dashboard" },
   { to: "/fileshare", label: "File Share" },
 ];
 
+function useAppStatus(intervalMs = 5000) {
+  const [status, setStatus] = useState<AppStatus | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const poll = () => {
+      fetchAppStatus()
+        .then((s) => { if (!cancelled) setStatus(s); })
+        .catch(() => { if (!cancelled) setStatus(null); });
+    };
+    poll();
+    timerRef.current = setInterval(poll, intervalMs);
+    return () => {
+      cancelled = true;
+      if (timerRef.current !== null) clearInterval(timerRef.current);
+    };
+  }, [intervalMs]);
+
+  return status;
+}
+
+function StatusDot({ status }: { status: AppStatus | null }) {
+  const connected = status?.serial.connected ?? false;
+  const color = status === null ? "#666" : connected ? "#4caf50" : "#888";
+  const label = status === null
+    ? "Backend unreachable"
+    : connected
+      ? `Connected — ${status.serial.mode === "replay" ? "replay" : status.serial.port ?? "serial"}`
+      : "Serial disconnected";
+
+  return (
+    <span
+      title={label}
+      style={{
+        display: "inline-block",
+        width: 10,
+        height: 10,
+        borderRadius: "50%",
+        background: color,
+        marginRight: 12,
+        boxShadow: connected ? "0 0 6px #4caf50" : "none",
+        cursor: "default",
+        flexShrink: 0,
+      }}
+    />
+  );
+}
+
 export default function NavBar() {
   const { user, logout } = useAuth();
   const { pathname } = useLocation();
+  const appStatus = useAppStatus();
 
   const navStyle: React.CSSProperties = {
     display: "flex",
@@ -55,6 +107,7 @@ export default function NavBar() {
   return (
     <nav style={navStyle}>
       <Link to="/dashboard" style={brandStyle}>DAVE</Link>
+      <StatusDot status={appStatus} />
       {NAV_LINKS.map(({ to, label }) => (
         <Link key={to} to={to} style={pathname.startsWith(to) ? linkActive : linkBase}>
           {label}

@@ -85,6 +85,21 @@ class SerialWorker:
     def current_log_path(self) -> str | None:
         return str(self._log_path) if self._log_path is not None else None
 
+    @property
+    def status(self) -> dict:
+        with self._lock:
+            mode = self._mode
+            connected = mode is not None
+            port = None
+            if mode == "serial" and self._serial is not None:
+                port = self._serial.port
+            return {
+                "connected": connected,
+                "mode": mode,
+                "port": port,
+                "log_path": str(self._log_path) if self._log_path is not None else None,
+            }
+
     def send(self, text: str) -> None:
         with self._lock:
             if self._mode != "serial" or self._serial is None or not self._serial.is_open:
