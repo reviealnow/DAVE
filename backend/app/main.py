@@ -11,6 +11,7 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.app_api import router as app_router
 from app.api.analyzer_api import router as analyzer_router
@@ -142,9 +143,29 @@ async def websocket_endpoint(ws: WebSocket) -> None:
 
 
 # ── Serve built React frontend in server mode ─────────────────────────────────
+class SPAStaticFiles(StaticFiles):
+    """StaticFiles that falls back to index.html for client-side routes.
+
+    The React app uses BrowserRouter, so deep links (/login, /fileshare) and
+    page refreshes hit the backend with paths that have no matching file on
+    disk. Instead of 404, serve index.html and let React Router resolve it.
+    API and WebSocket routes are registered before this mount, so they are
+    never reached by the fallback.
+    """
+
+    async def get_response(self, path: str, scope):  # type: ignore[no-untyped-def]
+        try:
+            return await super().get_response(path, scope)
+        except StarletteHTTPException as exc:
+            # Missing file → if it's not an API/WS path, hand off to the SPA.
+            if exc.status_code == 404 and not path.startswith(("api/", "ws")):
+                return await super().get_response("index.html", scope)
+            raise
+
+
 _FRONTEND_DIST = ROOT_DIR / "frontend" / "dist"
 if APP_MODE == "server" and _FRONTEND_DIST.is_dir():
-    app.mount("/", StaticFiles(directory=str(_FRONTEND_DIST), html=True), name="spa")
+    app.mount("/", SPAStaticFiles(directory=str(_FRONTEND_DIST), html=True), name="spa")
 
 
 if __name__ == "__main__":
