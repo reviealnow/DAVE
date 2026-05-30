@@ -5,7 +5,6 @@ import {
   getAppMeta,
   getHealth,
   getSerialLogDownloadUrl,
-  getUpdateCheck,
   listSerialPorts,
   openSerial,
   sendSerial,
@@ -17,6 +16,7 @@ import ConsolePanel from "../components/dashboard/ConsolePanel";
 import CpuChart, { CpuPoint } from "../components/dashboard/CpuChart";
 import MemoryChart, { MemPoint } from "../components/dashboard/MemoryChart";
 import SnapshotReplayPanel from "../components/dashboard/SnapshotReplayPanel";
+import UpdateChecker from "../components/dashboard/UpdateChecker";
 const DEFAULT_SERIAL_PORT = "/dev/ttyUSB0";
 const CRITICAL_CRASH_PATTERN = /\b(kernel panic|q6 crash|watchdog(?:\s+reset|\s+bite|\s+timeout)?)\b/i;
 
@@ -35,9 +35,6 @@ export default function Dashboard() {
   const [backendReady, setBackendReady] = useState(false);
   const [startupMessage, setStartupMessage] = useState("Starting local engine...");
   const [startupTone, setStartupTone] = useState<"neutral" | "success" | "error">("neutral");
-  const [updateMessage, setUpdateMessage] = useState("");
-  const [updateTone, setUpdateTone] = useState<"neutral" | "warning" | "error">("neutral");
-  const [releaseUrl, setReleaseUrl] = useState("");
   const [mode, setMode] = useState<"serial" | "replay">("serial");
   const [selectedPort, setSelectedPort] = useState(DEFAULT_SERIAL_PORT);
   const [manualPort, setManualPort] = useState("");
@@ -86,11 +83,8 @@ export default function Dashboard() {
         }
         setAppName(meta.product_name);
         setAppVersion(meta.current_version);
-        setReleaseUrl(meta.releases_page);
       } catch {
-        if (!cancelled) {
-          setReleaseUrl("");
-        }
+        // Falls back to defaults; version widget reports details separately.
       }
 
       for (let attempt = 1; attempt <= 30; attempt += 1) {
@@ -104,23 +98,6 @@ export default function Dashboard() {
           setAppVersion(health.version);
           setStartupTone("success");
           setStartupMessage(`Local engine ready on version ${health.version}.`);
-
-          const update = await getUpdateCheck();
-          if (cancelled) {
-            return;
-          }
-
-          setReleaseUrl(update.releases_page);
-          if (update.update_available) {
-            setUpdateTone("warning");
-            setUpdateMessage(update.message);
-          } else if (!update.ok) {
-            setUpdateTone("error");
-            setUpdateMessage(update.message);
-          } else {
-            setUpdateTone("neutral");
-            setUpdateMessage(update.message);
-          }
           return;
         } catch {
           if (cancelled) {
@@ -608,7 +585,7 @@ export default function Dashboard() {
   return (
     <div style={{ fontFamily: "sans-serif", maxWidth: 1100, margin: "0 auto", padding: 16 }}>
       <h1 style={{ textAlign: "center", marginBottom: 8 }}>{appName}</h1>
-      <div style={{ textAlign: "center", color: "#555", marginBottom: 12 }}>Desktop version {appVersion}</div>
+      <UpdateChecker currentVersion={appVersion} />
       <div
         style={{
           border: "1px solid",
@@ -622,26 +599,6 @@ export default function Dashboard() {
       >
         {startupMessage}
       </div>
-      {updateMessage ? (
-        <div
-          style={{
-            border: "1px solid",
-            borderColor: updateTone === "warning" ? "#e0b84d" : updateTone === "error" ? "#f5c2c7" : "#d7d7d7",
-            background: updateTone === "warning" ? "#fff7e6" : updateTone === "error" ? "#fff1f1" : "#f7f7f7",
-            color: updateTone === "warning" ? "#7c5200" : updateTone === "error" ? "#7f1d1d" : "#333",
-            borderRadius: 8,
-            padding: "10px 12px",
-            marginBottom: 12,
-          }}
-        >
-          <span>{updateMessage}</span>
-          {releaseUrl ? (
-            <a href={releaseUrl} target="_blank" rel="noreferrer" style={{ marginLeft: 8 }}>
-              Releases
-            </a>
-          ) : null}
-        </div>
-      ) : null}
       {controls}
       {reconnectStatus ? (
         <div
