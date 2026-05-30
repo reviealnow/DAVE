@@ -1,5 +1,5 @@
 {
-  "product_name": "Dave — DUT Lab Portal",
+  "product_name": "DAVE",
   "github_repository": "reviealnow/Dave",
   "releases_api": "https://api.github.com/repos/reviealnow/Dave/releases/latest",
   "tags_api": "https://api.github.com/repos/reviealnow/Dave/tags",

@@ -70,7 +70,7 @@ export default function LoginPage() {
       <div style={card}>
         <h2 style={{ textAlign: "center", marginBottom: 4, color: "#1a1a2e" }}>DAVE</h2>
         <p style={{ textAlign: "center", color: "#777", marginBottom: 24, fontSize: 13 }}>
-          DUT Lab Portal
+          Lab Portal
         </p>
 
         <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>

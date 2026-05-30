@@ -8,7 +8,7 @@ VENV="$REPO_ROOT/.venv"
 BACKEND="$REPO_ROOT/backend"
 DATA="$REPO_ROOT/data/fileshare"
 
-echo "=== Dave Lab Portal — Server Startup ==="
+echo "=== DAVE — Server Startup ==="
 echo "Repo root : $REPO_ROOT"
 echo "Data dir  : $DATA"
 

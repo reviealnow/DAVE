@@ -55,7 +55,7 @@ async def lifespan(app: FastAPI):  # type: ignore[type-arg]
     yield
 
 
-app = FastAPI(title="Dave — DUT Lab Portal", lifespan=lifespan)
+app = FastAPI(title="DAVE", lifespan=lifespan)
 
 # ── CORS ──────────────────────────────────────────────────────────────────────
 # Desktop mode: only allow local Tauri/Vite origins.
@@ -150,7 +150,7 @@ if APP_MODE == "server" and _FRONTEND_DIST.is_dir():
 if __name__ == "__main__":
     import uvicorn
 
-    parser = ArgumentParser(description="Dave backend")
+    parser = ArgumentParser(description="DAVE backend")
     parser.add_argument("--host", default=os.getenv("APP_HOST", "127.0.0.1"))
     parser.add_argument("--port", type=int, default=int(os.getenv("APP_PORT", "8765")))
     parser.add_argument("--reload", action="store_true")
