@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { deleteFile, FileInfo, FileVisibility, getDownloadUrl, setArtifactType, setVisibility } from "../../api/fileshare";
 import { useAuth } from "../../auth/AuthProvider";
 
@@ -27,6 +27,14 @@ export default function FileListTable({ files, onChanged, onDeleted }: Props) {
   const [busy, setBusy] = useState<number | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [batchBusy, setBatchBusy] = useState(false);
+  // Re-entry guard for batch delete. setBatchBusy(true) only applies on the
+  // next render, and an in-flight boolean won't help when a second synthetic
+  // click lands *after* the first run already finished (its finally would have
+  // cleared the flag) but still carries the pre-render selection. A short
+  // timestamp cooldown blocks any second trigger that arrives within the window
+  // regardless of how the first one is timed against the confirm dialog.
+  const lastBatchDeleteAt = useRef(0);
+  const BATCH_DELETE_COOLDOWN_MS = 2000;
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [pageSize, setPageSize] = useState(25);
   const [page, setPage] = useState(0);
@@ -116,7 +124,15 @@ export default function FileListTable({ files, onChanged, onDeleted }: Props) {
   async function handleBatchDelete() {
     const ids = [...selected];
     if (ids.length === 0) return;
-    if (!confirm(`Delete ${ids.length} selected file(s)? This cannot be undone.`)) return;
+    // Drop a second trigger that arrives within the cooldown (e.g. a rapid
+    // double click). Stamp before confirm() so the guard holds even while the
+    // dialog is open.
+    if (Date.now() - lastBatchDeleteAt.current < BATCH_DELETE_COOLDOWN_MS) return;
+    lastBatchDeleteAt.current = Date.now();
+    if (!confirm(`Delete ${ids.length} selected file(s)? This cannot be undone.`)) {
+      lastBatchDeleteAt.current = 0;
+      return;
+    }
     setBatchBusy(true);
     try {
       const results = await Promise.allSettled(ids.map((id) => deleteFile(id)));
