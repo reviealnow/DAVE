@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from serial.tools import list_ports
 
-from app.config import ANALYZER_SCRIPT, LOG_DIR
+from app.config import ANALYZER_SCRIPT, EVENT_DETECTOR_SCRIPT, LOG_DIR
 from app.tools import dispatch
 from app.tools.context import AppContext
 
@@ -155,6 +155,43 @@ def run_analyzer_for_session(session_dir: Path) -> None:
         raise DownloadWorkflowError(f"analyzer3.py execution failed: {message}", status_code=500)
 
 
+def run_event_detector_for_session(session_dir: Path) -> None:
+    """Best-effort crash/abnormal-event scan over the session log(s).
+
+    Runs tools/log_event_detector.py against the session directory and drops a
+    log_events.json next to the analyzer outputs (so it gets zipped into the
+    bundle). This is additive: any failure here is logged but never blocks the
+    CPU/Memory analysis download. analyzer3.py is the primary product; the event
+    report is a bonus for chasing kernel panic / Q6 crash / watchdog, etc.
+    """
+    if not EVENT_DETECTOR_SCRIPT.exists() or not EVENT_DETECTOR_SCRIPT.is_file():
+        print("[dave] log_event_detector.py not found; skipping crash-event scan")
+        return
+
+    output_path = session_dir / "log_events.json"
+    try:
+        completed = subprocess.run(
+            [
+                sys.executable,
+                str(EVENT_DETECTOR_SCRIPT),
+                "--root",
+                str(session_dir),
+                "--output",
+                str(output_path),
+            ],
+            cwd=session_dir,
+            capture_output=True,
+            text=True,
+        )
+    except Exception as exc:  # pragma: no cover - defensive, never break download
+        print(f"[dave] event detector failed to execute (ignored): {exc}")
+        return
+
+    if completed.returncode != 0:
+        message = completed.stderr.strip() or completed.stdout.strip() or "unknown error"
+        print(f"[dave] event detector exited non-zero (ignored): {message}")
+
+
 def zip_session_dir(session_dir: Path) -> Path:
     if not session_dir.exists() or not session_dir.is_dir():
         raise DownloadWorkflowError("failed to create zip: session directory not found", status_code=500)
@@ -219,6 +256,7 @@ def download_log(file_name: str) -> FileResponse:
         log_path = save_downloaded_log_to_session(file_name=safe_name, session_dir=session_dir)
         ensure_log_has_minimum_snapshots(log_path=log_path)
         run_analyzer_for_session(session_dir=session_dir)
+        run_event_detector_for_session(session_dir=session_dir)
         zip_path = zip_session_dir(session_dir=session_dir)
     except DownloadWorkflowError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc

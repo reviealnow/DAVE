@@ -33,6 +33,7 @@ LOG_DIR = DATA_DIR / "logs"
 SNAPSHOT_FILE = LOG_DIR / "snapshots.jsonl"
 TOOLS_DIR = ROOT_DIR / "tools"
 ANALYZER_SCRIPT = TOOLS_DIR / "analyzer3.py"
+EVENT_DETECTOR_SCRIPT = TOOLS_DIR / "log_event_detector.py"
 ANALYZER_OUTPUT_DIR = LOG_DIR / "analyzer_output"
 
 # ── App mode ──────────────────────────────────────────────────────────────────
