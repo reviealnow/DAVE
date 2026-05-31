@@ -207,6 +207,73 @@ def test_delete_other_users_file_returns_403(client):
     assert res.status_code == 403
 
 
+# ── Batch delete ──────────────────────────────────────────────────────────────
+
+def test_batch_delete_all_own_files(client):
+    _register(client)
+    _login(client)
+    ids = [_upload(client, filename=f"f{n}.log").json()["file"]["id"] for n in range(3)]
+
+    res = client.post("/api/fileshare/files/batch-delete", json={"ids": ids})
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert sorted(body["deleted"]) == sorted(ids)
+    assert body["failed"] == []
+    assert client.get("/api/fileshare/files").json()["files"] == []
+
+
+def test_batch_delete_mixed_ownership_partial(client):
+    _register(client, "alice")
+    _register(client, "bob", "pass456")
+
+    _login(client, "bob", "pass456")
+    bob_pub = _upload(client, filename="bob.log", visibility="public").json()["file"]["id"]
+    client.post("/api/auth/logout")
+
+    _login(client, "alice")
+    alice_id = _upload(client, filename="alice.log").json()["file"]["id"]
+
+    res = client.post("/api/fileshare/files/batch-delete", json={"ids": [alice_id, bob_pub]})
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["deleted"] == [alice_id]
+    assert body["failed"] == [{"id": bob_pub, "reason": "forbidden"}]
+
+
+def test_batch_delete_nonexistent_id(client):
+    _register(client)
+    _login(client)
+    fid = _upload(client).json()["file"]["id"]
+
+    res = client.post("/api/fileshare/files/batch-delete", json={"ids": [fid, 99999]})
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["deleted"] == [fid]
+    assert body["failed"] == [{"id": 99999, "reason": "not_found"}]
+
+
+def test_batch_delete_empty_list(client):
+    _register(client)
+    _login(client)
+    res = client.post("/api/fileshare/files/batch-delete", json={"ids": []})
+    assert res.status_code == 200, res.text
+    assert res.json() == {"deleted": [], "failed": []}
+
+
+def test_batch_delete_unauthenticated_returns_401(client):
+    res = client.post("/api/fileshare/files/batch-delete", json={"ids": [1]})
+    assert res.status_code == 401
+
+
+def test_batch_delete_dedups_repeated_ids(client):
+    _register(client)
+    _login(client)
+    fid = _upload(client).json()["file"]["id"]
+    res = client.post("/api/fileshare/files/batch-delete", json={"ids": [fid, fid, fid]})
+    assert res.status_code == 200, res.text
+    assert res.json()["deleted"] == [fid]
+
+
 # ── Visibility toggle ─────────────────────────────────────────────────────────
 
 def test_toggle_visibility_as_owner(client):

@@ -77,6 +77,20 @@ def delete_file(
     svc.delete_file(file_id, current_user["id"], _ip(request))
 
 
+class BatchDeleteBody(BaseModel):
+    ids: list[int]
+
+
+@router.post("/files/batch-delete")
+def batch_delete_files(
+    body: BatchDeleteBody,
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    result = svc.delete_files(body.ids, current_user["id"], _ip(request))
+    return result
+
+
 class VisibilityBody(BaseModel):
     visibility: str
 

@@ -180,6 +180,48 @@ def delete_file(file_id: int, current_user_id: int, ip: str | None = None) -> No
         _audit(conn, current_user_id, "delete", "file", str(file_id), info["original_filename"], ip)
 
 
+def delete_files(file_ids: list[int], current_user_id: int, ip: str | None = None) -> dict:
+    """Delete multiple files in one DB transaction.
+
+    Per-file ownership/existence is checked individually; a file the caller
+    doesn't own or that doesn't exist is reported under "failed" rather than
+    aborting the whole batch. Blobs are unlinked for every successfully removed
+    row. A single ``batch_delete`` audit entry summarises the operation.
+    """
+    deleted: list[int] = []
+    failed: list[dict] = []
+
+    # De-dup while preserving order so the same id can't be processed twice.
+    seen: set[int] = set()
+    ordered_ids = [fid for fid in file_ids if not (fid in seen or seen.add(fid))]
+
+    with db_ctx() as conn:
+        for file_id in ordered_ids:
+            row = conn.execute(
+                "SELECT id, owner_user_id, stored_filename FROM files WHERE id = ?",
+                (file_id,),
+            ).fetchone()
+            if row is None:
+                failed.append({"id": file_id, "reason": "not_found"})
+                continue
+            if row["owner_user_id"] != current_user_id:
+                failed.append({"id": file_id, "reason": "forbidden"})
+                continue
+
+            (FILESHARE_UPLOAD_DIR / row["stored_filename"]).unlink(missing_ok=True)
+            conn.execute("DELETE FROM files WHERE id = ?", (file_id,))
+            deleted.append(file_id)
+
+        if deleted:
+            _audit(
+                conn, current_user_id, "batch_delete", "file",
+                ",".join(str(i) for i in deleted),
+                f"deleted {len(deleted)} file(s)", ip,
+            )
+
+    return {"deleted": deleted, "failed": failed}
+
+
 def set_visibility(file_id: int, visibility: str, current_user_id: int, ip: str | None = None) -> dict:
     if visibility not in ("public", "private"):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="visibility must be 'public' or 'private'")

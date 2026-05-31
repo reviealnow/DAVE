@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { deleteFile, FileInfo, FileVisibility, getDownloadUrl, setArtifactType, setVisibility } from "../../api/fileshare";
+import { batchDeleteFiles, deleteFile, FileInfo, FileVisibility, getDownloadUrl, setArtifactType, setVisibility } from "../../api/fileshare";
 import { useAuth } from "../../auth/AuthProvider";
 
 const ARTIFACT_TYPES = [
@@ -135,16 +135,19 @@ export default function FileListTable({ files, onChanged, onDeleted }: Props) {
     }
     setBatchBusy(true);
     try {
-      const results = await Promise.allSettled(ids.map((id) => deleteFile(id)));
-      const failed: number[] = [];
-      results.forEach((r, i) => {
-        if (r.status === "fulfilled") onDeleted(ids[i]);
-        else failed.push(ids[i]);
-      });
-      setSelected(new Set(failed));
+      // Single round-trip: the backend deletes the whole batch in one
+      // transaction and reports per-file success/failure.
+      const { deleted, failed } = await batchDeleteFiles(ids);
+      deleted.forEach((id) => onDeleted(id));
+      setSelected(new Set(failed.map((f) => f.id)));
       if (failed.length > 0) {
-        alert(`${failed.length} file(s) could not be deleted (ID: ${failed.join(", ")}).`);
+        alert(
+          `${failed.length} file(s) could not be deleted:\n` +
+            failed.map((f) => `  ID ${f.id} (${f.reason})`).join("\n"),
+        );
       }
+    } catch (err) {
+      alert(`Batch delete failed: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setBatchBusy(false);
     }
