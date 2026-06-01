@@ -1,13 +1,52 @@
 import os
 import secrets
+import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
 
-# ── Repo root (derived from this file's location before env is loaded) ────────
+# ── Frozen (PyInstaller desktop sidecar) awareness ────────────────────────────
+# In a packaged desktop build the backend runs as a PyInstaller binary spawned
+# by the Tauri shell — there is no source tree on disk, so paths cannot be
+# derived from this file's location. Two roots matter:
+#   • RESOURCE_ROOT — read-only bundled files (VERSION, release.json, tools/).
+#                     PyInstaller extracts these under sys._MEIPASS.
+#   • DATA_DIR      — writable runtime data (DB, uploads, logs, .env). The Tauri
+#                     shell passes DAVE_DATA_DIR pointing at the OS app-data dir.
+# In a normal source/server install both collapse back to the repo, so behaviour
+# is unchanged.
+_FROZEN = bool(getattr(sys, "frozen", False))
+
 # config.py lives at Dave/backend/app/config.py → parents[2] = Dave/
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_ENV_FILE = _REPO_ROOT / ".env"
+_SOURCE_ROOT = Path(__file__).resolve().parents[2]
+
+if _FROZEN:
+    RESOURCE_ROOT = Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))
+else:
+    RESOURCE_ROOT = _SOURCE_ROOT
+
+
+def _default_data_dir() -> Path:
+    """Writable data dir when DAVE_DATA_DIR is not set."""
+    if not _FROZEN:
+        return _SOURCE_ROOT / "data"
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "DAVE"
+    if os.name == "nt":
+        base = os.getenv("APPDATA") or str(Path.home() / "AppData" / "Roaming")
+        return Path(base) / "DAVE"
+    base = os.getenv("XDG_DATA_HOME") or str(Path.home() / ".local" / "share")
+    return Path(base) / "DAVE"
+
+
+# ── Repository / runtime roots ────────────────────────────────────────────────
+ROOT_DIR = Path(os.getenv("DAVE_ROOT", RESOURCE_ROOT))
+DATA_DIR = Path(os.getenv("DAVE_DATA_DIR", _default_data_dir()))
+
+# ── .env location ─────────────────────────────────────────────────────────────
+# Source/dev/server: repo root (existing behaviour). Frozen desktop: the writable
+# data dir, since the app bundle is read-only.
+_ENV_FILE = (DATA_DIR / ".env") if _FROZEN else (_SOURCE_ROOT / ".env")
 
 # Load .env first so all os.getenv() calls below pick it up
 load_dotenv(_ENV_FILE)
@@ -16,6 +55,7 @@ load_dotenv(_ENV_FILE)
 # If not set via environment or .env, generate one and persist it to .env.
 # This runs once on first startup; subsequent restarts read the same key.
 if not os.getenv("AUTH_SECRET_KEY"):
+    _ENV_FILE.parent.mkdir(parents=True, exist_ok=True)
     _new_key = secrets.token_hex(32)
     with _ENV_FILE.open("a", encoding="utf-8") as _fh:
         _fh.write(f"AUTH_SECRET_KEY={_new_key}\n")
@@ -24,17 +64,26 @@ if not os.getenv("AUTH_SECRET_KEY"):
     load_dotenv(_ENV_FILE, override=True)
     print(f"[dave] Generated stable AUTH_SECRET_KEY → {_ENV_FILE}")
 
-# ── Repository / runtime root ─────────────────────────────────────────────────
-ROOT_DIR = Path(os.getenv("DAVE_ROOT", _REPO_ROOT))
-DATA_DIR = Path(os.getenv("DAVE_DATA_DIR", ROOT_DIR / "data"))
-
 # ── DUT / serial / analyzer paths (preserved from DUT_browser) ────────────────
 LOG_DIR = DATA_DIR / "logs"
 SNAPSHOT_FILE = LOG_DIR / "snapshots.jsonl"
-TOOLS_DIR = ROOT_DIR / "tools"
+TOOLS_DIR = RESOURCE_ROOT / "tools"
 ANALYZER_SCRIPT = TOOLS_DIR / "analyzer3.py"
 EVENT_DETECTOR_SCRIPT = TOOLS_DIR / "log_event_detector.py"
 ANALYZER_OUTPUT_DIR = LOG_DIR / "analyzer_output"
+
+
+def python_tool_argv(script: "str | os.PathLike[str]") -> list[str]:
+    """Command prefix to run a bundled Python tool script as a subprocess.
+
+    Normal install → [python, script]. In a frozen PyInstaller build,
+    sys.executable is the backend binary itself (not a Python interpreter), so we
+    re-enter it in "--run-tool" mode, which runpy-executes the script (see
+    backend/desktop_backend.py). Append any tool args after this prefix.
+    """
+    if _FROZEN:
+        return [sys.executable, "--run-tool", str(script)]
+    return [sys.executable, str(script)]
 
 # ── App mode ──────────────────────────────────────────────────────────────────
 # desktop : Tauri window spawns this backend; listen on 127.0.0.1 only

@@ -16,7 +16,15 @@
       "all": false,
       "shell": {
         "all": false,
-        "open": true
+        "open": true,
+        "sidecar": true,
+        "scope": [
+          {
+            "name": "binaries/dave-backend",
+            "sidecar": true,
+            "args": true
+          }
+        ]
       }
     },
     "windows": [
@@ -48,7 +56,7 @@
         "icons/icon.icns",
         "icons/icon.ico"
       ],
-      "externalBin": [],
+      "externalBin": ["binaries/dave-backend"],
       "resources": [],
       "copyright": "",
       "macOS": {

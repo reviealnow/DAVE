@@ -2,11 +2,20 @@ from __future__ import annotations
 
 import os
 import json
+import sys
 from functools import lru_cache
 from pathlib import Path
 
 
-ROOT_DIR = Path(os.getenv("DAVE_ROOT", Path(__file__).resolve().parents[2]))
+# VERSION and release.json are read-only resources. In a frozen PyInstaller
+# desktop build they are bundled under sys._MEIPASS; otherwise they live at the
+# repo root. (Mirrors RESOURCE_ROOT in app.config.)
+if getattr(sys, "frozen", False):
+    _RESOURCE_ROOT = Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))
+else:
+    _RESOURCE_ROOT = Path(__file__).resolve().parents[2]
+
+ROOT_DIR = Path(os.getenv("DAVE_ROOT", _RESOURCE_ROOT))
 VERSION_FILE = ROOT_DIR / "VERSION"
 RELEASE_CONFIG_FILE = ROOT_DIR / "release.json"
 

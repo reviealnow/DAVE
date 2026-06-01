@@ -1,0 +1,4 @@
+# Build-time dependency for packaging the desktop backend sidecar (Phase B).
+# Install into the project venv before building dave-backend.spec:
+#     .venv/bin/pip install -r backend/requirements-desktop.txt
+pyinstaller>=6.0

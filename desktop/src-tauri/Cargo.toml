@@ -16,9 +16,11 @@ tauri-build = { version = "1", features = [] }
 [dependencies]
 serde_json = "1"
 serde = { version = "1", features = ["derive"] }
-# shell-open: lets the frontend open the GitHub Releases page in the system
-#   browser (used by the UpdateChecker widget — see tauri.conf.json allowlist).
-tauri = { version = "1", features = ["shell-open"] }
+# shell-open          : open the GitHub Releases page in the system browser
+#                       (UpdateChecker widget — see tauri.conf.json allowlist).
+# shell-sidecar       : matches the shell.sidecar allowlist entry.
+# process-command-api : spawn the bundled FastAPI backend sidecar from main.rs.
+tauri = { version = "1", features = ["shell-open", "shell-sidecar", "process-command-api"] }
 
 [features]
 # This feature is used for production builds or when a dev server is not specified,

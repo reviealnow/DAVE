@@ -33,6 +33,9 @@ frontend/dist/
 # Tauri build
 desktop/node_modules/
 desktop/src-tauri/target/
+# Backend sidecar binaries — large PyInstaller output, rebuilt from
+# backend/dave-backend.spec (see README "Desktop Phase B").
+desktop/src-tauri/binaries/
 
 # macOS
 .DS_Store

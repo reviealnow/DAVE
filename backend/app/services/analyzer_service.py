@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import shutil
 import subprocess
-import sys
 import tempfile
 from pathlib import Path
 
-from app.config import ANALYZER_OUTPUT_DIR, ANALYZER_SCRIPT
+from app.config import ANALYZER_OUTPUT_DIR, ANALYZER_SCRIPT, python_tool_argv
 
 
 class AnalyzerService:
@@ -27,7 +26,7 @@ class AnalyzerService:
             shutil.copy2(ANALYZER_SCRIPT, tmp_path / "analyzer3.py")
 
             completed = subprocess.run(
-                [sys.executable, "analyzer3.py"],
+                python_tool_argv("analyzer3.py"),
                 cwd=tmp_path,
                 capture_output=True,
                 text=True,

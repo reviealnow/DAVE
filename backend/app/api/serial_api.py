@@ -4,7 +4,6 @@ import csv
 import json
 import shutil
 import subprocess
-import sys
 import time
 import zipfile
 from datetime import datetime
@@ -18,7 +17,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from serial.tools import list_ports
 
-from app.config import ANALYZER_SCRIPT, EVENT_DETECTOR_SCRIPT, LOG_DIR
+from app.config import ANALYZER_SCRIPT, EVENT_DETECTOR_SCRIPT, LOG_DIR, python_tool_argv
 from app.tools import dispatch
 from app.tools.context import AppContext
 
@@ -135,7 +134,7 @@ def run_analyzer_for_session(session_dir: Path) -> None:
 
     try:
         completed = subprocess.run(
-            [sys.executable, str(ANALYZER_SCRIPT)],
+            python_tool_argv(ANALYZER_SCRIPT),
             cwd=session_dir,
             capture_output=True,
             text=True,
@@ -174,8 +173,7 @@ def run_event_detector_for_session(session_dir: Path) -> None:
     try:
         completed = subprocess.run(
             [
-                sys.executable,
-                str(EVENT_DETECTOR_SCRIPT),
+                *python_tool_argv(EVENT_DETECTOR_SCRIPT),
                 "--root",
                 str(session_dir),
                 "--output",

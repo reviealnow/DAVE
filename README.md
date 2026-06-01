@@ -84,28 +84,51 @@ database holds a small set of seed users/files for testing only.
 ## Option B — Run as a desktop app (Tauri)
 
 The desktop shell lives in [`desktop/`](desktop/). It hosts the same React frontend
-in a native window.
+in a native window and **bundles the FastAPI backend as a sidecar** — the shell
+spawns it on launch (`127.0.0.1:8765`) and kills it on exit, so the app is fully
+self-contained with no manual backend start. Writable data (DB, uploads, logs,
+`.env`) lives in the OS app-data dir (e.g. `~/Library/Application Support/DAVE`),
+passed to the backend via `DAVE_DATA_DIR`.
 
-> **Current state (Phase A):** the desktop shell connects to a backend you start
-> yourself on `127.0.0.1:8765`. Bundling the backend as a self-contained
-> [PyInstaller sidecar](#roadmap) is the planned next step.
+### Build the backend sidecar
+
+The sidecar is a [PyInstaller](https://pyinstaller.org/) single-file binary built
+from [`backend/dave-backend.spec`](backend/dave-backend.spec). It is **not** checked
+into git (it's large; gitignored) — build it before building/running the desktop app:
+
+```bash
+# from the repo root, in the project venv
+.venv/bin/pip install -r backend/requirements-desktop.txt   # first time only
+.venv/bin/pyinstaller backend/dave-backend.spec --noconfirm \
+    --distpath build/dist --workpath build/work
+
+# place it where Tauri expects it (name must end with the Rust target triple)
+mkdir -p desktop/src-tauri/binaries
+cp build/dist/dave-backend \
+   desktop/src-tauri/binaries/dave-backend-$(rustc -Vv | sed -n 's/host: //p')
+```
+
+The frozen binary is multi-mode: it runs the server by default and re-enters itself
+in `--run-tool` mode to run the bundled `analyzer3.py` / `log_event_detector.py`
+(since there is no separate Python interpreter in a packaged app — see
+[`backend/desktop_backend.py`](backend/desktop_backend.py) and
+`app.config.python_tool_argv`).
 
 ### Develop / run
 
-In **two terminals** from the repo root:
-
 ```bash
-# 1) Start the backend in desktop mode
-cd backend
-APP_MODE=desktop ../.venv/bin/python -m app.main      # serves API on 127.0.0.1:8765
-
-# 2) Launch the Tauri shell (auto-starts the Vite dev server)
 cd desktop
 npm install        # first time only — installs the Tauri CLI
-npm run dev        # = tauri dev
+npm run dev        # = tauri dev (auto-starts the Vite dev server + spawns the sidecar)
 ```
 
-A native **DAVE** window opens, loads the frontend, and talks to your local backend.
+A native **DAVE** window opens and the bundled backend starts automatically.
+If you haven't built the sidecar yet, the shell logs a warning and falls back to a
+backend you run manually:
+
+```bash
+cd backend && APP_MODE=desktop ../.venv/bin/python -m app.main   # 127.0.0.1:8765
+```
 
 ### Build a distributable
 
@@ -114,8 +137,8 @@ cd desktop
 npm run build      # = tauri build → .app / .dmg (macOS), .msi (Windows), .deb/.AppImage (Linux)
 ```
 
-Output lands in `desktop/src-tauri/target/release/bundle/`. Remember the bundled app
-still expects a backend on `127.0.0.1:8765` until the sidecar work (Phase B) lands.
+Output lands in `desktop/src-tauri/target/release/bundle/`. The backend sidecar is
+bundled in, so the resulting app needs no separate backend.
 
 ### Regenerating app icons
 
@@ -197,10 +220,12 @@ DAVE/
 
 ## Roadmap
 
-- **Desktop Phase B — backend sidecar:** bundle the FastAPI backend with PyInstaller
-  and spawn/kill it from the Tauri shell so the desktop app is fully self-contained
-  (no manual backend start). The hook is sketched in
-  [`desktop/src-tauri/src/main.rs`](desktop/src-tauri/src/main.rs).
+- **Desktop CI packaging:** build the sidecar + signed `.dmg`/`.msi`/`.AppImage` in CI
+  per platform (each needs its own native PyInstaller build) and attach to GitHub Releases.
+- **Backend readiness gate:** brief splash/retry in the shell while the sidecar boots,
+  so the first frame never shows a transient connection error.
+- **Open Releases in system browser:** wire the `UpdateChecker` link through the Tauri
+  `shell.open` API (allowlist already enabled).
 
 ## License
 
