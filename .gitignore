@@ -47,5 +47,8 @@ desktop/src-tauri/target/
 htmlcov/
 .coverage
 
+# Playwright MCP session artifacts
+.playwright-mcp/
+
 # Temporary uploads
 *.tmp
