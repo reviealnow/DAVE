@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import csv
+import json
 import shutil
 import subprocess
 import sys
@@ -268,3 +270,116 @@ def download_log(file_name: str) -> FileResponse:
         filename=zip_path.name,
         media_type="application/zip",
     )
+
+
+def _to_number(value: str):
+    text = (value or "").strip()
+    if text == "":
+        return None
+    try:
+        if "." in text:
+            return float(text)
+        return int(text)
+    except ValueError:
+        try:
+            return float(text)
+        except ValueError:
+            return text
+
+
+def parse_cpu_csv(session_dir: Path) -> list[dict]:
+    matches = sorted(session_dir.glob("*cpu_usage.csv"))
+    if not matches:
+        return []
+    rows: list[dict] = []
+    with matches[0].open("r", newline="", encoding="utf-8", errors="ignore") as fp:
+        for raw in csv.DictReader(fp):
+            row: dict = {}
+            for key, value in raw.items():
+                if key in ("Timestamp", "Timestamp_MMDD_HHMMSS"):
+                    row[key] = value
+                elif key.endswith("_UsagePct"):
+                    row[key] = _to_number(value)
+            rows.append(row)
+    return rows
+
+
+def parse_memory_csv(session_dir: Path) -> list[dict]:
+    matches = sorted(session_dir.glob("*memory.csv"))
+    if not matches:
+        return []
+    keep_numeric = ("MemAvailable_kB", "Slab_kB", "SUnreclaim_kB", "EffectiveAvailable_kB")
+    rows: list[dict] = []
+    with matches[0].open("r", newline="", encoding="utf-8", errors="ignore") as fp:
+        for raw in csv.DictReader(fp):
+            row: dict = {}
+            for key, value in raw.items():
+                if key in ("Timestamp", "Timestamp_MMDD_HHMMSS"):
+                    row[key] = value
+                elif key in keep_numeric:
+                    row[key] = _to_number(value)
+            rows.append(row)
+    return rows
+
+
+def read_spike_report(session_dir: Path) -> str:
+    matches = sorted(session_dir.glob("*cpu_spike_report.txt"))
+    if not matches:
+        return ""
+    try:
+        return matches[0].read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        return ""
+
+
+def read_log_events(session_dir: Path) -> tuple[list[dict], dict]:
+    events_path = session_dir / "log_events.json"
+    if not events_path.exists():
+        return [], {"merged_event_count": 0}
+    try:
+        data = json.loads(events_path.read_text(encoding="utf-8", errors="ignore"))
+    except Exception:
+        return [], {"merged_event_count": 0}
+    events = data.get("events", []) if isinstance(data, dict) else []
+    summary = {"merged_event_count": data.get("merged_event_count", len(events))} if isinstance(data, dict) else {"merged_event_count": 0}
+    return events, summary
+
+
+@router.get("/logs/{file_name}/analysis")
+def analyze_log(file_name: str) -> dict:
+    try:
+        safe_name = Path(file_name).name
+        if safe_name != file_name:
+            raise DownloadWorkflowError("failed to analyze DUT log: invalid file name", status_code=400)
+
+        source_log_path = LOG_DIR / safe_name
+        if not source_log_path.exists() or not source_log_path.is_file():
+            raise DownloadWorkflowError("log file not found", status_code=404)
+
+        if should_bypass_analyzer(source_log_path):
+            return {
+                "analyzed": False,
+                "file_name": safe_name,
+                "reason": "log too short for analysis",
+            }
+
+        session_dir = create_dut_session_dir()
+        log_path = save_downloaded_log_to_session(file_name=safe_name, session_dir=session_dir)
+        ensure_log_has_minimum_snapshots(log_path=log_path)
+        run_analyzer_for_session(session_dir=session_dir)
+        run_event_detector_for_session(session_dir=session_dir)
+
+        events, event_summary = read_log_events(session_dir)
+        return {
+            "analyzed": True,
+            "file_name": safe_name,
+            "cpu": parse_cpu_csv(session_dir),
+            "memory": parse_memory_csv(session_dir),
+            "spike_report": read_spike_report(session_dir),
+            "events": events,
+            "event_summary": event_summary,
+        }
+    except DownloadWorkflowError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"unexpected error while analyzing DUT log: {exc}") from exc

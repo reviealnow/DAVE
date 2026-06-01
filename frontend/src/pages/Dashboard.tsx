@@ -14,6 +14,7 @@ import { connectDashboardWebSocket, SnapshotPayload, WifiClient } from "../api/w
 import ClientsPanel from "../components/dashboard/ClientsPanel";
 import ConsolePanel from "../components/dashboard/ConsolePanel";
 import CpuChart, { CpuPoint } from "../components/dashboard/CpuChart";
+import LogAnalysisPanel from "../components/dashboard/LogAnalysisPanel";
 import MemoryChart, { MemPoint } from "../components/dashboard/MemoryChart";
 import SnapshotReplayPanel from "../components/dashboard/SnapshotReplayPanel";
 import UpdateChecker from "../components/dashboard/UpdateChecker";
@@ -753,6 +754,10 @@ export default function Dashboard() {
         onDownloadLog={handleDownloadLog}
         canDownloadLog={backendReady && Boolean(currentLogFileName)}
         canSend={isSerialOpen}
+      />
+      <LogAnalysisPanel
+        fileName={currentLogFileName}
+        canAnalyze={backendReady && Boolean(currentLogFileName)}
       />
       {downloadNotice ? (
         <div

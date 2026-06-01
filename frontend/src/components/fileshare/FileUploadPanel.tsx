@@ -7,55 +7,96 @@ const ARTIFACT_TYPES = [
   "regression_bundle", "config_backup", "other",
 ];
 
+type UploadStatus = "queued" | "uploading" | "done" | "error";
+
+type UploadItem = {
+  id: string;
+  file: File;
+  status: UploadStatus;
+  progress: number;
+  error?: string;
+};
+
 type Props = { onUploaded: (f: FileInfo) => void };
 
+function makeId(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
 export default function FileUploadPanel({ onUploaded }: Props) {
-  const [file, setFile] = useState<File | null>(null);
+  const [items, setItems] = useState<UploadItem[]>([]);
   const [visibility, setVisibility] = useState<FileVisibility>("private");
   const [artifactType, setArtifactType] = useState("general");
   const [description, setDescription] = useState("");
   const [busy, setBusy] = useState(false);
-  const [progress, setProgress] = useState(0);
   const [dragOver, setDragOver] = useState(false);
   const [error, setError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
+  function addFiles(files: FileList | File[]) {
+    const incoming = Array.from(files).map<UploadItem>((file) => ({
+      id: makeId(),
+      file,
+      status: "queued",
+      progress: 0,
+    }));
+    if (incoming.length === 0) return;
+    setItems((prev) => [...prev, ...incoming]);
+    setError("");
+  }
+
+  function patchItem(id: string, patch: Partial<UploadItem>) {
+    setItems((prev) => prev.map((it) => (it.id === id ? { ...it, ...patch } : it)));
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    if (!file) return;
+    const pending = items.filter((it) => it.status === "queued" || it.status === "error");
+    if (pending.length === 0) return;
     setBusy(true);
-    setProgress(0);
     setError("");
-    try {
-      const info = await uploadFile(file, {
-        visibility,
-        artifact_type: artifactType,
-        description: description || undefined,
-        onProgress: setProgress,
-      });
-      onUploaded(info);
-      setFile(null);
-      setDescription("");
-      setProgress(0);
-      if (inputRef.current) inputRef.current.value = "";
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Upload failed");
-    } finally {
-      setBusy(false);
+
+    for (const item of pending) {
+      patchItem(item.id, { status: "uploading", progress: 0, error: undefined });
+      try {
+        const info = await uploadFile(item.file, {
+          visibility,
+          artifact_type: artifactType,
+          description: description || undefined,
+          onProgress: (pct) => patchItem(item.id, { progress: pct }),
+        });
+        patchItem(item.id, { status: "done", progress: 100 });
+        onUploaded(info);
+      } catch (err) {
+        patchItem(item.id, {
+          status: "error",
+          error: err instanceof Error ? err.message : "Upload failed",
+        });
+      }
     }
+
+    setBusy(false);
+    if (inputRef.current) inputRef.current.value = "";
+  }
+
+  function handleClear() {
+    if (busy) return;
+    setItems([]);
+    setDescription("");
+    setError("");
+    if (inputRef.current) inputRef.current.value = "";
   }
 
   function handleDrop(e: DragEvent<HTMLDivElement>) {
     e.preventDefault();
     setDragOver(false);
     if (busy) return;
-    const dropped = e.dataTransfer.files?.[0];
-    if (dropped) {
-      setFile(dropped);
-      setError("");
-      if (inputRef.current) inputRef.current.value = "";
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      addFiles(e.dataTransfer.files);
     }
   }
+
+  const pendingCount = items.filter((it) => it.status === "queued" || it.status === "error").length;
 
   const panel: React.CSSProperties = {
     background: "#fff",
@@ -88,11 +129,18 @@ export default function FileUploadPanel({ onUploaded }: Props) {
     transition: "background 0.12s, border-color 0.12s",
   };
 
+  const statusMeta: Record<UploadStatus, { color: string; label: string }> = {
+    queued: { color: "#777", label: "Queued" },
+    uploading: { color: "#1565c0", label: "Uploading…" },
+    done: { color: "#2e7d32", label: "✓ Done" },
+    error: { color: "#c00", label: "✗ Error" },
+  };
+
   return (
     <div style={panel}>
-      <h3 style={{ margin: "0 0 14px", fontSize: 15 }}>Upload File</h3>
+      <h3 style={{ margin: "0 0 14px", fontSize: 15 }}>Upload Files</h3>
       <form onSubmit={(e) => void handleSubmit(e)}>
-        {/* Drag-and-drop zone (click to browse) */}
+        {/* Drag-and-drop zone (click to browse, multi-file) */}
         <div
           style={dropZone}
           onClick={() => inputRef.current?.click()}
@@ -100,20 +148,52 @@ export default function FileUploadPanel({ onUploaded }: Props) {
           onDragLeave={() => setDragOver(false)}
           onDrop={handleDrop}
         >
-          {file ? (
-            <span style={{ color: "#1a1a2e", fontWeight: 500 }}>
-              📄 {file.name} <span style={{ color: "#999", fontWeight: 400 }}>({(file.size / 1024).toFixed(1)} KB)</span>
-            </span>
-          ) : (
-            <span>Drag &amp; drop a file here, or click to browse</span>
-          )}
+          <span>Drag &amp; drop files here, or click to browse (multiple allowed)</span>
           <input
             ref={inputRef}
             type="file"
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            multiple
+            onChange={(e) => { if (e.target.files) addFiles(e.target.files); }}
             style={{ display: "none" }}
           />
         </div>
+
+        {items.length > 0 && (
+          <div style={{ marginBottom: 10, display: "flex", flexDirection: "column", gap: 6 }}>
+            {items.map((item) => {
+              const meta = statusMeta[item.status];
+              return (
+                <div
+                  key={item.id}
+                  style={{ border: "1px solid #eee", borderRadius: 6, padding: "8px 10px", background: "#fcfcfc" }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                    <span style={{ color: "#1a1a2e", fontWeight: 500, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      📄 {item.file.name}{" "}
+                      <span style={{ color: "#999", fontWeight: 400 }}>({(item.file.size / 1024).toFixed(1)} KB)</span>
+                    </span>
+                    <span style={{ color: meta.color, fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" }}>{meta.label}</span>
+                  </div>
+                  {(item.status === "uploading" || item.status === "done") && (
+                    <div style={{ height: 6, background: "#eee", borderRadius: 4, overflow: "hidden", marginTop: 6 }}>
+                      <div
+                        style={{
+                          width: `${item.progress}%`,
+                          height: "100%",
+                          background: item.status === "done" ? "#2e7d32" : "#1565c0",
+                          transition: "width 0.1s linear",
+                        }}
+                      />
+                    </div>
+                  )}
+                  {item.status === "error" && item.error && (
+                    <div style={{ color: "#c00", fontSize: 11, marginTop: 4 }}>{item.error}</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         <div style={{ ...row, marginBottom: 10 }}>
           <select value={visibility} onChange={(e) => setVisibility(e.target.value as FileVisibility)} style={select}>
@@ -130,44 +210,44 @@ export default function FileUploadPanel({ onUploaded }: Props) {
           <input
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="Description (optional)"
+            placeholder="Description (optional, applies to all)"
             style={{ flex: 1, padding: "7px 10px", borderRadius: 5, border: "1px solid #ccc", fontSize: 13 }}
           />
           <button
             type="submit"
-            disabled={!file || busy}
+            disabled={pendingCount === 0 || busy}
             style={{
               padding: "7px 18px",
               background: "#1a1a2e",
               color: "#fff",
               border: "none",
               borderRadius: 5,
-              cursor: !file || busy ? "not-allowed" : "pointer",
+              cursor: pendingCount === 0 || busy ? "not-allowed" : "pointer",
               fontSize: 13,
               fontWeight: 600,
-              opacity: !file || busy ? 0.6 : 1,
+              opacity: pendingCount === 0 || busy ? 0.6 : 1,
             }}
           >
-            {busy ? "Uploading…" : "Upload"}
+            {busy ? "Uploading…" : `Upload${pendingCount > 0 ? ` (${pendingCount})` : ""}`}
+          </button>
+          <button
+            type="button"
+            onClick={handleClear}
+            disabled={busy || items.length === 0}
+            style={{
+              padding: "7px 14px",
+              background: "#fff",
+              color: "#555",
+              border: "1px solid #ccc",
+              borderRadius: 5,
+              cursor: busy || items.length === 0 ? "not-allowed" : "pointer",
+              fontSize: 13,
+              opacity: busy || items.length === 0 ? 0.6 : 1,
+            }}
+          >
+            Clear
           </button>
         </div>
-
-        {/* Upload progress bar */}
-        {busy && (
-          <div style={{ marginBottom: 10 }}>
-            <div style={{ height: 8, background: "#eee", borderRadius: 4, overflow: "hidden" }}>
-              <div
-                style={{
-                  width: `${progress}%`,
-                  height: "100%",
-                  background: "#1565c0",
-                  transition: "width 0.1s linear",
-                }}
-              />
-            </div>
-            <div style={{ fontSize: 11, color: "#777", marginTop: 4, textAlign: "right" }}>{progress}%</div>
-          </div>
-        )}
 
         {error && (
           <div style={{ color: "#c00", fontSize: 12, background: "#fff0f0", padding: "6px 10px", borderRadius: 4 }}>

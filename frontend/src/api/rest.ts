@@ -103,6 +103,46 @@ export function getSerialLogDownloadUrl(fileName: string): string {
   return apiUrl(`/api/serial/logs/${encodeURIComponent(fileName)}`);
 }
 
+export type CpuRow = {
+  Timestamp?: string;
+  Timestamp_MMDD_HHMMSS?: string;
+  [key: string]: string | number | undefined;
+};
+
+export type MemRow = {
+  Timestamp?: string;
+  Timestamp_MMDD_HHMMSS?: string;
+  MemAvailable_kB?: number;
+  Slab_kB?: number;
+  SUnreclaim_kB?: number;
+  EffectiveAvailable_kB?: number;
+  [key: string]: string | number | undefined;
+};
+
+export type LogEvent = {
+  event_id: number;
+  severity: string;
+  matched_keywords: string[];
+  event_time: string;
+  hit_line_numbers: number[];
+  file_path: string;
+};
+
+export type LogAnalysisResponse = {
+  analyzed: boolean;
+  file_name: string;
+  reason?: string;
+  cpu?: CpuRow[];
+  memory?: MemRow[];
+  spike_report?: string;
+  events?: LogEvent[];
+  event_summary?: { merged_event_count: number };
+};
+
+export async function getLogAnalysis(fileName: string): Promise<LogAnalysisResponse> {
+  return get<LogAnalysisResponse>(`/api/serial/logs/${encodeURIComponent(fileName)}/analysis`);
+}
+
 export type SnapshotFileInfo = {
   name: string;
   size_bytes: number;
