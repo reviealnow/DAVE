@@ -10,6 +10,7 @@ import {
   sendSerial,
   SerialPortInfo,
 } from "../api/rest";
+import { saveBlob } from "../api/download";
 import { connectDashboardWebSocket, SnapshotPayload, WifiClient } from "../api/websocket";
 import ClientsPanel from "../components/dashboard/ClientsPanel";
 import ConsolePanel from "../components/dashboard/ConsolePanel";
@@ -50,6 +51,7 @@ export default function Dashboard() {
   const [lastSeenCriticalCrashCount, setLastSeenCriticalCrashCount] = useState(0);
   const [criticalCrashKeywordInput, setCriticalCrashKeywordInput] = useState("");
   const [lockedCriticalCrashKeywords, setLockedCriticalCrashKeywords] = useState<string[]>([]);
+  const [crashExpanded, setCrashExpanded] = useState(false);
   const [downloadNotice, setDownloadNotice] = useState<{ message: string; tone: "blue" | "green" } | null>(null);
   const [cpuHistory, setCpuHistory] = useState<CpuPoint[]>([]);
   const [cpuCoreKeys, setCpuCoreKeys] = useState<string[]>([]);
@@ -287,7 +289,7 @@ export default function Dashboard() {
       return;
     }
     const fallbackName = currentLogFileName;
-    const response = await fetch(getSerialLogDownloadUrl(currentLogFileName));
+    const response = await fetch(getSerialLogDownloadUrl(currentLogFileName), { credentials: "include" });
     if (!response.ok) {
       throw new Error(await response.text());
     }
@@ -296,14 +298,12 @@ export default function Dashboard() {
     const fileName = parseDownloadFileName(response.headers.get("content-disposition"), fallbackName);
     const blob = await response.blob();
 
-    const url = window.URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = fileName;
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    window.URL.revokeObjectURL(url);
+    // Browser <a download> is ignored inside the Tauri webview, so route through
+    // the shared helper (native Save-As dialog in desktop, blob+anchor in browser).
+    const result = await saveBlob(blob, fileName);
+    if (!result.saved) {
+      return; // user cancelled the native save dialog
+    }
 
     if (contentType.includes("text/plain")) {
       setDownloadNotice({ message: "The log file is ready.", tone: "blue" });
@@ -469,6 +469,13 @@ export default function Dashboard() {
               >
                 Open
               </button>
+              <span style={{ width: 1, alignSelf: "stretch", background: "#ddd", margin: "0 2px" }} />
+              <button type="button" onClick={() => void handleRunTop()} disabled={!backendReady || !isSerialOpen}>
+                Run top
+              </button>
+              <button type="button" onClick={() => void handleStopCommand()} disabled={!backendReady || !isSerialOpen}>
+                Stop
+              </button>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
               <div style={{ position: "relative", display: "inline-flex", alignItems: "center" }}>
@@ -616,53 +623,52 @@ export default function Dashboard() {
           {reconnectStatus}
         </div>
       ) : null}
-      <div style={{ border: "1px solid #ddd", padding: 12, marginBottom: 12 }}>
-        <div
-          style={{
-            display: "grid",
-            gap: 12,
-            gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
-            alignItems: "start",
-          }}
-        >
-          <div>
-            <h3 style={{ marginTop: 0, marginBottom: 8 }}>CPU Monitor Commands</h3>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-start" }}>
-              <button type="button" onClick={() => void handleRunTop()} disabled={!backendReady || !isSerialOpen}>
-                Run top
-              </button>
-              <button type="button" onClick={() => void handleStopCommand()} disabled={!backendReady || !isSerialOpen}>
-                Stop
-              </button>
-            </div>
-          </div>
-          <div>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-              <h3 style={{ marginTop: 0, marginBottom: 0, color: "#b71c1c" }}>
-                Critical Crash ({allCriticalCrashLines.length})
-              </h3>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span
-                  style={{
-                    background: newCriticalCrashCount > 0 ? "#b71c1c" : "#9e9e9e",
-                    color: "#fff",
-                    borderRadius: 999,
-                    padding: "2px 8px",
-                    fontSize: 11,
-                    fontWeight: 700,
-                  }}
-                >
-                  New {newCriticalCrashCount}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setLastSeenCriticalCrashCount(allCriticalCrashLines.length)}
-                  disabled={newCriticalCrashCount === 0}
-                >
-                  Mark as seen
-                </button>
-              </div>
-            </div>
+      {/* Compact, collapsible Critical Crash row. Run top / Stop now live on the
+          port card's Open row; this section stays collapsed by default so the
+          console + log analyzer below get the vertical space. The New badge
+          still alerts when crashes arrive while collapsed. */}
+      <div style={{ border: "1px solid #ddd", borderRadius: 6, padding: "6px 10px", marginBottom: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <button
+            type="button"
+            onClick={() => setCrashExpanded((v) => !v)}
+            aria-expanded={crashExpanded}
+            title={crashExpanded ? "Collapse" : "Expand"}
+            style={{
+              border: "none", background: "none", cursor: "pointer",
+              fontSize: 12, color: "#b71c1c", padding: "2px 4px", lineHeight: 1,
+            }}
+          >
+            {crashExpanded ? "▾" : "▸"}
+          </button>
+          <h3
+            onClick={() => setCrashExpanded((v) => !v)}
+            style={{ margin: 0, color: "#b71c1c", fontSize: 15, cursor: "pointer", flex: 1 }}
+          >
+            Critical Crash ({allCriticalCrashLines.length})
+          </h3>
+          <span
+            style={{
+              background: newCriticalCrashCount > 0 ? "#b71c1c" : "#9e9e9e",
+              color: "#fff",
+              borderRadius: 999,
+              padding: "2px 8px",
+              fontSize: 11,
+              fontWeight: 700,
+            }}
+          >
+            New {newCriticalCrashCount}
+          </span>
+          <button
+            type="button"
+            onClick={() => setLastSeenCriticalCrashCount(allCriticalCrashLines.length)}
+            disabled={newCriticalCrashCount === 0}
+          >
+            Mark as seen
+          </button>
+        </div>
+        {crashExpanded ? (
+          <div style={{ marginTop: 8 }}>
             <div style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "center", flexWrap: "wrap" }}>
               <input
                 value={criticalCrashKeywordInput}
@@ -709,8 +715,8 @@ export default function Dashboard() {
                 background: "#fff6f6",
                 color: "#4a1515",
                 borderRadius: 6,
-                minHeight: 72,
-                maxHeight: 140,
+                minHeight: 56,
+                maxHeight: 96,
                 overflowY: "auto",
                 padding: 8,
                 fontFamily: "monospace",
@@ -736,7 +742,7 @@ export default function Dashboard() {
               )}
             </div>
           </div>
-        </div>
+        ) : null}
       </div>
       {cpuHistory.length > 0 ? <CpuChart data={cpuHistory} coreKeys={cpuCoreKeys} /> : null}
       <MemoryChart data={memHistory} />

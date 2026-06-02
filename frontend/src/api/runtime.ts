@@ -4,7 +4,7 @@ declare global {
   }
 }
 
-function isTauriRuntime(): boolean {
+export function isTauriRuntime(): boolean {
   return typeof window !== "undefined" && Boolean(window.__TAURI__);
 }
 
