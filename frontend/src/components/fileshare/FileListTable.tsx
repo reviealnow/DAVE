@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { batchDeleteFiles, deleteFile, FileInfo, FileVisibility, getDownloadUrl, setArtifactType, setVisibility } from "../../api/fileshare";
+import { downloadFromUrl } from "../../api/download";
 import { useAuth } from "../../auth/AuthProvider";
 
 const ARTIFACT_TYPES = [
@@ -116,6 +117,19 @@ export default function FileListTable({ files, onChanged, onDeleted }: Props) {
     try {
       await deleteFile(f.id);
       onDeleted(f.id);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  // Browser <a download> is ignored inside the Tauri webview, so route through
+  // the shared helper (native Save-As dialog in desktop, blob+anchor in browser).
+  async function handleDownload(f: FileInfo) {
+    setBusy(f.id);
+    try {
+      await downloadFromUrl(getDownloadUrl(f.id), f.original_filename);
+    } catch (err) {
+      alert(`Download failed: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setBusy(null);
     }
@@ -314,16 +328,16 @@ export default function FileListTable({ files, onChanged, onDeleted }: Props) {
                   </td>
                   <td style={td}>
                     <div style={{ display: "flex", gap: 6 }}>
-                      <a
-                        href={getDownloadUrl(f.id)}
-                        download={f.original_filename}
+                      <button
+                        onClick={() => void handleDownload(f)}
+                        disabled={isBusy}
                         style={{
-                          padding: "4px 10px", background: "#1565c0", color: "#fff", borderRadius: 4,
-                          fontSize: 12, textDecoration: "none", fontWeight: 500,
+                          padding: "4px 10px", background: "#1565c0", color: "#fff", border: "none",
+                          borderRadius: 4, fontSize: 12, cursor: "pointer", fontWeight: 500,
                         }}
                       >
                         Download
-                      </a>
+                      </button>
                       {isOwner && (
                         <button
                           onClick={() => void handleDelete(f)}

@@ -20,7 +20,10 @@ serde = { version = "1", features = ["derive"] }
 #                       (UpdateChecker widget — see tauri.conf.json allowlist).
 # shell-sidecar       : matches the shell.sidecar allowlist entry.
 # process-command-api : spawn the bundled FastAPI backend sidecar from main.rs.
-tauri = { version = "1", features = ["shell-open", "shell-sidecar", "process-command-api"] }
+# dialog-save         : native "Save As" dialog for file/log downloads.
+# fs-write-file       : write the downloaded bytes to the chosen path
+#                       (browser <a download> is ignored in the webview).
+tauri = { version = "1", features = ["shell-open", "shell-sidecar", "process-command-api", "dialog-save", "fs-write-file"] }
 
 [features]
 # This feature is used for production builds or when a dev server is not specified,
