@@ -1,7 +1,22 @@
 import { save } from "@tauri-apps/api/dialog";
 import { writeBinaryFile } from "@tauri-apps/api/fs";
+import { downloadDir, join } from "@tauri-apps/api/path";
 
 import { isTauriRuntime } from "./runtime";
+
+/**
+ * Pre-fill the native "Save As" dialog inside the user's Downloads folder.
+ * If the path API is unavailable (older runtime / missing `path` allowlist),
+ * fall back to the bare filename so saving still works — it just opens
+ * wherever the OS last left the dialog.
+ */
+async function defaultSavePath(filename: string): Promise<string> {
+  try {
+    return await join(await downloadDir(), filename);
+  } catch {
+    return filename;
+  }
+}
 
 export interface SaveResult {
   /** false when the user cancelled the native "Save As" dialog (Tauri only). */
@@ -20,7 +35,7 @@ export interface SaveResult {
  */
 export async function saveBlob(blob: Blob, filename: string): Promise<SaveResult> {
   if (isTauriRuntime()) {
-    const path = await save({ defaultPath: filename });
+    const path = await save({ defaultPath: await defaultSavePath(filename) });
     if (!path) {
       return { saved: false };
     }

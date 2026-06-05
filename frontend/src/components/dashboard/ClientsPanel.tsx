@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 
 import { WifiClient } from "../../api/websocket";
+import { cardStyle } from "../../theme/dashboard";
 
 type Radio = "2G" | "5G" | "6G";
 
@@ -16,7 +17,7 @@ export default function ClientsPanel({ clientsByRadio }: Props) {
   const rows = useMemo(() => clientsByRadio[activeRadio] ?? [], [activeRadio, clientsByRadio]);
 
   return (
-    <div style={{ border: "1px solid #ddd", padding: 12, marginBottom: 12 }}>
+    <div style={cardStyle}>
       <h3 style={{ marginTop: 0 }}>WiFi Clients Panel</h3>
       <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
         {RADIOS.map((radio) => (

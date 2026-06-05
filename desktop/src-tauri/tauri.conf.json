@@ -34,6 +34,9 @@
         "all": false,
         "writeFile": true,
         "scope": ["$HOME/**"]
+      },
+      "path": {
+        "all": true
       }
     },
     "windows": [

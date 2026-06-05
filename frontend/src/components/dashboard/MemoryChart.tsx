@@ -1,6 +1,8 @@
 import { useMemo } from "react";
 import { Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
+import { cardStyle } from "../../theme/dashboard";
+
 export type MemPoint = {
   ts: string;
   used_mb: number;
@@ -23,14 +25,14 @@ export default function MemoryChart({ data }: Props) {
 
   if (data.length === 0) {
     return (
-      <div style={{ border: "1px solid #ddd", padding: 12, marginBottom: 12, height: 120, display: "flex", alignItems: "center", justifyContent: "center", color: "#999", fontSize: 13 }}>
+      <div style={{ ...cardStyle, height: 120, display: "flex", alignItems: "center", justifyContent: "center", color: "#999", fontSize: 13 }}>
         Memory chart — run <code style={{ margin: "0 4px", background: "#f0f0f0", padding: "1px 4px", borderRadius: 3 }}>top</code> on the DUT to populate
       </div>
     );
   }
 
   return (
-    <div style={{ border: "1px solid #ddd", padding: 12, marginBottom: 12, height: 280 }}>
+    <div style={{ ...cardStyle, height: 280 }}>
       <h3 style={{ marginTop: 0 }}>Memory Usage Chart</h3>
       <ResponsiveContainer width="100%" height="80%">
         <LineChart data={data}>

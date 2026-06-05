@@ -6,6 +6,7 @@ import {
   startSnapshotReplay,
   stopSnapshotReplay,
 } from "../../api/rest";
+import { cardStyle } from "../../theme/dashboard";
 
 type ReplayStatus = "idle" | "playing" | "done" | "stopped";
 
@@ -96,7 +97,7 @@ export default function SnapshotReplayPanel({ replayStatus, replayProgress, onRe
   }
 
   return (
-    <div style={{ border: "1px solid #ddd", padding: 12, marginBottom: 12 }}>
+    <div style={cardStyle}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
         <h3 style={{ margin: 0 }}>Snapshot Replay</h3>
         <button type="button" onClick={() => void refreshFiles()} disabled={loading}>

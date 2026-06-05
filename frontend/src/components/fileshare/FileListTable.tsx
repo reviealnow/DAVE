@@ -39,6 +39,8 @@ export default function FileListTable({ files, onChanged, onDeleted }: Props) {
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [pageSize, setPageSize] = useState(25);
   const [page, setPage] = useState(0);
+  // Transient "saved to …" confirmation after a download completes.
+  const [downloadNotice, setDownloadNotice] = useState<string | null>(null);
 
   // Owned files are the only ones the user can select for batch delete.
   const ownedIds = useMemo(
@@ -63,6 +65,12 @@ export default function FileListTable({ files, onChanged, onDeleted }: Props) {
       return next.size === prev.size ? prev : next;
     });
   }, [ownedIds]);
+  // Auto-dismiss the download confirmation toast after a few seconds.
+  useEffect(() => {
+    if (!downloadNotice) return;
+    const timer = window.setTimeout(() => setDownloadNotice(null), 3000);
+    return () => window.clearTimeout(timer);
+  }, [downloadNotice]);
 
   if (files.length === 0) {
     return (
@@ -127,7 +135,13 @@ export default function FileListTable({ files, onChanged, onDeleted }: Props) {
   async function handleDownload(f: FileInfo) {
     setBusy(f.id);
     try {
-      await downloadFromUrl(getDownloadUrl(f.id), f.original_filename);
+      const result = await downloadFromUrl(getDownloadUrl(f.id), f.original_filename);
+      // saved:false means the user cancelled the native Save-As dialog — stay quiet.
+      if (result.saved) {
+        setDownloadNotice(
+          result.path ? `Saved to ${result.path}` : `Downloaded ${f.original_filename}`,
+        );
+      }
     } catch (err) {
       alert(`Download failed: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
@@ -395,6 +409,27 @@ export default function FileListTable({ files, onChanged, onDeleted }: Props) {
           </button>
         </div>
       </div>
+
+      {downloadNotice ? (
+        <div
+          style={{
+            position: "fixed",
+            right: 16,
+            bottom: 16,
+            maxWidth: 480,
+            background: "#1b5e20",
+            color: "#fff",
+            padding: "10px 12px",
+            borderRadius: 8,
+            boxShadow: "0 4px 10px rgba(0, 0, 0, 0.2)",
+            fontSize: 13,
+            wordBreak: "break-all",
+            zIndex: 9999,
+          }}
+        >
+          {downloadNotice}
+        </div>
+      ) : null}
     </div>
   );
 }
