@@ -11,6 +11,7 @@ import {
   SerialPortInfo,
 } from "../api/rest";
 import { saveBlob } from "../api/download";
+import { cardStyle, SP } from "../theme/dashboard";
 import { connectDashboardWebSocket, SnapshotPayload, WifiClient } from "../api/websocket";
 import ClientsPanel from "../components/dashboard/ClientsPanel";
 import ConsolePanel from "../components/dashboard/ConsolePanel";
@@ -399,7 +400,7 @@ export default function Dashboard() {
 
   const controls = useMemo(
     () => (
-      <div style={{ border: "1px solid #ddd", padding: 12, marginBottom: 12, position: "relative" }}>
+      <div style={{ ...cardStyle, position: "relative" }}>
         <div style={{ position: "absolute", top: 8, right: 8, display: "flex", gap: 8, alignItems: "center" }}>
           <button
             onClick={handleClose}
@@ -469,11 +470,39 @@ export default function Dashboard() {
               >
                 Open
               </button>
-              <span style={{ width: 1, alignSelf: "stretch", background: "#ddd", margin: "0 2px" }} />
-              <button type="button" onClick={() => void handleRunTop()} disabled={!backendReady || !isSerialOpen}>
+              <span style={{ width: 1, alignSelf: "stretch", background: "#e0e0e0", margin: "0 2px" }} />
+              <button
+                type="button"
+                onClick={() => void handleRunTop()}
+                disabled={!backendReady || !isSerialOpen}
+                style={{
+                  background: "#fff",
+                  color: "#374151",
+                  border: "1px solid #cfd4dc",
+                  padding: "6px 12px",
+                  fontSize: 14,
+                  fontWeight: 500,
+                  borderRadius: 6,
+                  cursor: !backendReady || !isSerialOpen ? "default" : "pointer",
+                }}
+              >
                 Run top
               </button>
-              <button type="button" onClick={() => void handleStopCommand()} disabled={!backendReady || !isSerialOpen}>
+              <button
+                type="button"
+                onClick={() => void handleStopCommand()}
+                disabled={!backendReady || !isSerialOpen}
+                style={{
+                  background: "#fff",
+                  color: "#b42318",
+                  border: "1px solid #f1c0bb",
+                  padding: "6px 12px",
+                  fontSize: 14,
+                  fontWeight: 500,
+                  borderRadius: 6,
+                  cursor: !backendReady || !isSerialOpen ? "default" : "pointer",
+                }}
+              >
                 Stop
               </button>
             </div>
@@ -590,9 +619,32 @@ export default function Dashboard() {
     return rows.slice(-20);
   }, [allCriticalCrashLines, lastSeenCriticalCrashCount]);
 
+  // Auto-expand the Critical Crash card the instant new matching lines arrive,
+  // so a crash surfaces immediately instead of hiding behind the collapsed
+  // header. We force it open only on the *rising edge* (unseen count goes up),
+  // not on every render — so the user can still manually collapse it while a
+  // crash sits unseen.
+  const prevCriticalCrashCount = useRef(newCriticalCrashCount);
+  useEffect(() => {
+    if (newCriticalCrashCount > prevCriticalCrashCount.current) {
+      setCrashExpanded(true);
+    }
+    prevCriticalCrashCount.current = newCriticalCrashCount;
+  }, [newCriticalCrashCount]);
+
   return (
-    <div style={{ fontFamily: "sans-serif", maxWidth: 1100, margin: "0 auto", padding: 16 }}>
-      <h1 style={{ textAlign: "center", marginBottom: 8 }}>{appName}</h1>
+    <div
+      style={{
+        fontFamily: "sans-serif",
+        maxWidth: 1100,
+        margin: "0 auto",
+        padding: 16,
+        display: "flex",
+        flexDirection: "column",
+        gap: SP.md,
+      }}
+    >
+      <h1 style={{ textAlign: "center", margin: 0 }}>{appName}</h1>
       <UpdateChecker currentVersion={appVersion} />
       <div
         style={{
@@ -602,7 +654,6 @@ export default function Dashboard() {
           color: startupTone === "error" ? "#7f1d1d" : startupTone === "success" ? "#166534" : "#333",
           borderRadius: 8,
           padding: "10px 12px",
-          marginBottom: 12,
         }}
       >
         {startupMessage}
@@ -616,7 +667,6 @@ export default function Dashboard() {
             color: "#7c5200",
             borderRadius: 8,
             padding: "10px 12px",
-            marginBottom: 12,
             fontSize: 13,
           }}
         >
@@ -627,7 +677,7 @@ export default function Dashboard() {
           port card's Open row; this section stays collapsed by default so the
           console + log analyzer below get the vertical space. The New badge
           still alerts when crashes arrive while collapsed. */}
-      <div style={{ border: "1px solid #ddd", borderRadius: 6, padding: "6px 10px", marginBottom: 12 }}>
+      <div style={{ ...cardStyle, padding: "10px 16px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <button
             type="button"
@@ -744,8 +794,12 @@ export default function Dashboard() {
           </div>
         ) : null}
       </div>
-      {cpuHistory.length > 0 ? <CpuChart data={cpuHistory} coreKeys={cpuCoreKeys} /> : null}
-      <MemoryChart data={memHistory} />
+      {/* CPU + Memory sit side by side on wide screens (Luna 2-up grid),
+          stacking below ~420px. The grid's own 16px gap owns the gutter. */}
+      <div style={{ display: "grid", gap: SP.md, gridTemplateColumns: "repeat(auto-fit, minmax(420px, 1fr))" }}>
+        {cpuHistory.length > 0 ? <CpuChart data={cpuHistory} coreKeys={cpuCoreKeys} /> : null}
+        <MemoryChart data={memHistory} />
+      </div>
       {backendReady ? <ClientsPanel clientsByRadio={clientsByRadio} /> : null}
       {backendReady ? (
         <SnapshotReplayPanel

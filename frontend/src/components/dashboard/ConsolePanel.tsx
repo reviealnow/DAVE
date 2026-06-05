@@ -3,6 +3,8 @@ import { keymap } from "@codemirror/view";
 import CodeMirror, { EditorView, ViewUpdate } from "@uiw/react-codemirror";
 import { vim } from "@replit/codemirror-vim";
 
+import { cardStyle } from "../../theme/dashboard";
+
 type Props = {
   lines: string[];
   onSend: (text: string) => Promise<void>;
@@ -220,7 +222,7 @@ export default function ConsolePanel({
   }
 
   return (
-    <div style={{ border: "1px solid #ddd", padding: 12 }}>
+    <div style={cardStyle}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
         <h3 style={{ margin: 0 }}>Serial Console</h3>
         <div style={{ display: "flex", gap: 8 }}>

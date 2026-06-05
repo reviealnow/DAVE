@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import { CpuRow, getLogAnalysis, LogAnalysisResponse, LogEvent, MemRow } from "../../api/rest";
+import { cardStyle } from "../../theme/dashboard";
 
 type Props = {
   fileName: string;
@@ -60,7 +61,7 @@ export default function LogAnalysisPanel({ fileName, canAnalyze }: Props) {
   }
 
   return (
-    <div style={{ border: "1px solid #ddd", padding: 12, marginBottom: 12 }}>
+    <div style={cardStyle}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
         <h3 style={{ margin: 0 }}>Log Analysis</h3>
         <button

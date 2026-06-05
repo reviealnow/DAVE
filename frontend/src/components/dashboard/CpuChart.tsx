@@ -1,6 +1,8 @@
 import { useMemo } from "react";
 import { Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
+import { cardStyle } from "../../theme/dashboard";
+
 export type CpuPoint = {
   device_ts: string;
   [key: string]: number | string;
@@ -28,7 +30,7 @@ export default function CpuChart({ data, coreKeys }: Props) {
   }, [data, coreKeys]);
 
   return (
-    <div style={{ border: "1px solid #ddd", padding: 12, marginBottom: 12, height: 320 }}>
+    <div style={{ ...cardStyle, height: 320 }}>
       <h3 style={{ marginTop: 0 }}>CPU Usage Chart</h3>
       <ResponsiveContainer width="100%" height="85%">
         <LineChart data={data}>
